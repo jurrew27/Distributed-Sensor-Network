@@ -68,6 +68,22 @@ class Sensor:
         self.peer = peer
         self.window = window
 
+    def main(self):
+        # -- This is the event loop. --
+        while self.window.update():
+            rlist, _, _ = select([self.mcast, self.peer], [], [], 0)
+            for recv in rlist:
+                (data, addr) = recv.recvfrom(4096)
+                command, _, initiator, neighbor, _, init_range, _ = message_decode(data)
+                if command == MSG_PING:
+                    self.recv_ping(initiator, init_range, addr)
+                elif command == MSG_PONG:
+                    self.recv_pong(neighbor, addr)
+
+            cmd = self.window.getline()
+            if cmd == 'ping':
+                self.send_ping()
+
     def send_ping(self):
         self.neighbors = []
         msg = message_encode(
@@ -85,7 +101,6 @@ class Sensor:
     def recv_ping(self, initiator, init_range, addr):
         dist = sqrt(pow(abs(initiator[0] - self.sensor_pos[0]), 2) +
                 pow(abs(initiator[1] - self.sensor_pos[1]), 2))
-
         if round(dist) == 0 or dist > init_range:
             return
 
@@ -113,23 +128,6 @@ class Sensor:
 
         self.neighbors.append([neighbor, addr])
         print self.neighbors
-
-    def main(self):
-        # -- This is the event loop. --
-        while self.window.update():
-            rlist, _, _ = select([self.mcast, self.peer], [], [], 0)
-            for recv in rlist:
-                (data, addr) = recv.recvfrom(4096)
-                command, _, initiator, neighbor, _, init_range, _ = message_decode(data)
-                print command
-                if command == MSG_PING:
-                    self.recv_ping(initiator, init_range, addr)
-                elif command == MSG_PONG:
-                    self.recv_pong(neighbor, addr)
-
-            cmd = self.window.getline()
-            if cmd == 'ping':
-                self.send_ping()
 
 # -- program entry point --
 if __name__ == '__main__':
