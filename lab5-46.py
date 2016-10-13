@@ -33,6 +33,7 @@ class Sensor:
         self.sensor_pos = sensor_pos
         self.sensor_range = sensor_range
         self.sensor_val = sensor_val
+        self.grid_size = grid_size
         self.neighbors = []
 
         # -- Create the multicast listener socket. --
@@ -80,9 +81,20 @@ class Sensor:
                 elif command == MSG_PONG:
                     self.recv_pong(neighbor, addr)
 
-            cmd = self.window.getline()
-            if cmd == 'ping':
+            command = self.window.getline()
+            if command == 'ping':
                 self.send_ping()
+            elif command == 'list':
+                self.window.writeln(self.neighbors)
+            elif command == 'move':
+                self.sensor_pos = random_position(self.grid_size)
+                self.window.writeln('my position is (%s, %s)' % self.sensor_pos)
+            elif command.startswith('set'):
+                new_range = int(command.split()[1])
+                if new_range % 10 == 0 and new_range >= 20 and new_range <= 70:
+                    self.sensor_range = new_range
+                self.window.writeln('sensor range is %s' % self.sensor_range)
+
 
     def send_ping(self):
         self.neighbors = []
