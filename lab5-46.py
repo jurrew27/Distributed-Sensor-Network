@@ -129,7 +129,7 @@ class Sensor:
         if round(dist) == 0 or dist > init_range:
             return
 
-        self.window.writeln('ping recieved from: (%s, %s)' % initiator)
+        self.window.writeln('ping recieved from: %s:%s' % addr)
 
         self.send_pong(initiator, init_range, addr)
 
@@ -144,10 +144,10 @@ class Sensor:
             0
         )
         self.peer.sendto(msg, addr)
-        self.window.writeln('pong send')
+        self.window.writeln('pong send to %s:%s' % addr)
 
     def recv_pong(self, neighbor, addr):
-        self.window.writeln('pong recieved from: (%s, %s)' % neighbor)
+        self.window.writeln('pong recieved from: %s:%s' % addr)
         self.neighbors.append([neighbor, addr])
 
     def send_echo(self, sequence, initiator):
