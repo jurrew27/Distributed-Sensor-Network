@@ -18,6 +18,10 @@ def random_position(n):
     return (x, y)
 
 
+def to_dict_key(sequence, address):
+    return str(sequence) + str(address[0]) + str(address[1])
+
+
 class Sensor:
     def __init__(self, mcast_addr, sensor_pos, sensor_range, sensor_val,
             grid_size, ping_period):
@@ -35,6 +39,9 @@ class Sensor:
         self.sensor_val = sensor_val
         self.grid_size = grid_size
         self.neighbors = []
+        self.sequence_number = 0
+        self.fathers = dict()
+        self.received = []
 
         # -- Create the multicast listener socket. --
         mcast = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
@@ -75,11 +82,15 @@ class Sensor:
             rlist, _, _ = select([self.mcast, self.peer], [], [], 0)
             for recv in rlist:
                 (data, addr) = recv.recvfrom(4096)
-                command, _, initiator, neighbor, _, init_range, _ = message_decode(data)
+                command, sequence, initiator, neighbor, _, init_range, _ = message_decode(data)
                 if command == MSG_PING:
                     self.recv_ping(initiator, init_range, addr)
                 elif command == MSG_PONG:
                     self.recv_pong(neighbor, addr)
+                elif command == MSG_ECHO:
+                    self.recv_echo(sequence, initiator, addr)
+                elif command == MSG_ECHO_REPLY:
+                    self.recv_echo_reply(sequence, initiator, addr)
 
             command = self.window.getline()
             if command == 'ping':
@@ -94,7 +105,9 @@ class Sensor:
                 if new_range % 10 == 0 and new_range >= 20 and new_range <= 70:
                     self.sensor_range = new_range
                 self.window.writeln('sensor range is %s' % self.sensor_range)
-
+            elif command == 'echo':
+                self.send_echo(self.sequence_number, self.sensor_pos)
+                self.sequence_number = self.sequence_number + 1
 
     def send_ping(self):
         self.neighbors = []
@@ -135,9 +148,64 @@ class Sensor:
 
     def recv_pong(self, neighbor, addr):
         self.window.writeln('pong recieved from: (%s, %s)' % neighbor)
-
         self.neighbors.append([neighbor, addr])
-        print self.neighbors
+
+    def send_echo(self, sequence, initiator):
+        msg = message_encode(
+            MSG_ECHO,
+            sequence,
+            initiator,
+            self.sensor_pos,
+            OP_NOOP
+        )
+
+        neighbors_to_send = self.neighbors
+        if to_dict_key(sequence, initiator) in self.fathers:
+            father = self.fathers[to_dict_key(sequence, initiator)]
+            neighbors_to_send = filter(lambda nb: nb[1] != father, self.neighbors)
+
+        for node in neighbors_to_send:
+            self.peer.sendto(msg, node[1])
+            self.window.writeln('echo send to: %s:%s' % node[1])
+
+    def recv_echo(self, sequence, initiator, addr):
+        self.window.writeln('echo recieved from: %s:%s' % addr)
+
+        if to_dict_key(sequence, initiator) in self.fathers or len(self.neighbors) == 1:
+            self.send_echo_reply(sequence, initiator, addr)
+        else:
+            self.fathers.update({to_dict_key(sequence, initiator): addr})
+            self.send_echo(sequence, initiator)
+
+    def send_echo_reply(self, sequence, initiator, addr):
+        msg = message_encode(
+            MSG_ECHO_REPLY,
+            sequence,
+            initiator,
+            self.sensor_pos,
+            OP_NOOP
+        )
+
+        self.peer.sendto(msg, addr)
+        self.window.writeln('echo reply send to: %s:%s' % addr)
+
+    def recv_echo_reply(self, sequence, initiator, addr):
+        self.window.writeln('echo reply recieved from: %s:%s' % addr)
+
+        if (sequence, initiator, addr) not in self.received:
+            self.received.append((sequence, initiator, addr))
+
+        received_neighbors = filter(lambda nb: nb[0] == sequence and nb[1] == initiator, self.received)
+
+        if len(received_neighbors) == len(self.neighbors) and self.sensor_pos == initiator:
+            self.window.writeln('decide')
+        elif len(received_neighbors) + 1 >= len(self.neighbors) and self.sensor_pos != initiator:
+            self.send_echo_reply(
+                sequence,
+                initiator,
+                self.fathers[to_dict_key(sequence, initiator)]
+            )
+
 
 # -- program entry point --
 if __name__ == '__main__':
